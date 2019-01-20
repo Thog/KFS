@@ -164,6 +164,7 @@ impl<T: Object> IWaitable for SessionWrapper<T> {
     }
 
     fn handle_signaled(&mut self, manager: &WaitableManager) -> Result<bool, Error> {
+        // TODO manage C descriptor
         self.handle.receive(&mut self.buf[..], Some(0))?;
         let (ty, cmdid) = super::find_ty_cmdid(&self.buf[..]);
         match ty {

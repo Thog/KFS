@@ -28,7 +28,7 @@ pub mod macros;
 pub mod server;
 
 bitfield! {
-    /// Represenens the header of an HIPC command.
+    /// Represents the header of an HIPC command.
     ///
     /// The kernel uses this header to figure out how to send the IPC message.
     #[repr(transparent)]
@@ -115,15 +115,15 @@ pub enum IPCBufferType {
 #[derive(Debug, Clone)]
 pub struct IPCBuffer<'a> {
     /// Address to the value
-    addr: usize,
+    pub addr: u64,
     /// Size of the value
-    size: usize,
+    pub size: u64,
     /// Buffer type
-    ty: IPCBufferType,
+    pub ty: IPCBufferType,
     /// Tie the buffer's lifetime to the value's !
     /// This is very very very important, for the safety of this interface. It ensures that, as long as
     /// this IPCBuffer exist, the value it references cannot be dropped.
-    phantom: PhantomData<&'a ()>
+    pub phantom: PhantomData<&'a ()>
 }
 
 // TODO: libuser IPCBuffer: Verify that passed type matches the mutability guarantees
@@ -137,8 +137,8 @@ impl<'a> IPCBuffer<'a> {
     /// should be of type B, W or C.
     pub fn from_mut_ref<T>(val: &'a mut T, ty: IPCBufferType) -> IPCBuffer<'_> {
         IPCBuffer {
-            addr: val as *mut T as usize,
-            size: mem::size_of::<T>(),
+            addr: val as *mut T as u64,
+            size: mem::size_of::<T>() as u64,
             ty,
             phantom: PhantomData
         }
@@ -147,8 +147,8 @@ impl<'a> IPCBuffer<'a> {
     /// type A or X.
     pub fn from_ref<T>(val: &'a T, ty: IPCBufferType) -> IPCBuffer<'_> {
         IPCBuffer {
-            addr: val as *const T as usize,
-            size: mem::size_of::<T>(),
+            addr: val as *const T as u64,
+            size: mem::size_of::<T>() as u64,
             ty,
             phantom: PhantomData
         }
@@ -157,8 +157,8 @@ impl<'a> IPCBuffer<'a> {
     /// of type B, W or C.
     pub fn from_slice<T>(val: &'a [T], ty: IPCBufferType) -> IPCBuffer<'_> {
         IPCBuffer {
-            addr: if val.len() == 0 { 0 } else { val.as_ptr() as usize },
-            size: mem::size_of::<T>() * val.len(),
+            addr: if val.len() == 0 { 0 } else { val.as_ptr() as u64 },
+            size: (mem::size_of::<T>() * val.len()) as u64,
             ty,
             phantom: PhantomData
         }
@@ -167,8 +167,8 @@ impl<'a> IPCBuffer<'a> {
     /// type A or X.
     pub fn from_mut_slice<T>(val: &'a mut [T], ty: IPCBufferType) -> IPCBuffer<'_> {
         IPCBuffer {
-            addr: if val.len() == 0 { 0 } else { val.as_ptr() as usize },
-            size: mem::size_of::<T>() * val.len(),
+            addr: if val.len() == 0 { 0 } else { val.as_ptr() as u64 },
+            size: (mem::size_of::<T>() * val.len()) as u64,
             ty,
             phantom: PhantomData
         }
@@ -183,8 +183,8 @@ impl<'a> IPCBuffer<'a> {
     /// The pointer should point to memory pointing to len valid T.
     pub unsafe fn from_ptr_len<T>(val: *const T, len: usize, ty: IPCBufferType) -> IPCBuffer<'static> {
         IPCBuffer {
-            addr: val as usize,
-            size: mem::size_of::<T>() * len,
+            addr: val as u64,
+            size: (mem::size_of::<T>() * len) as u64,
             ty,
             phantom: PhantomData
         }
@@ -199,8 +199,8 @@ impl<'a> IPCBuffer<'a> {
     /// The pointer should point to memory pointing to len valid T.
     pub unsafe fn from_mut_ptr_len<T>(val: *mut T, len: usize, ty: IPCBufferType) -> IPCBuffer<'static> {
         IPCBuffer {
-            addr: val as usize,
-            size: mem::size_of::<T>() * len,
+            addr: val as u64,
+            size: (mem::size_of::<T>() * len) as u64,
             ty,
             phantom: PhantomData
         }
@@ -254,7 +254,7 @@ where
 {
     ty: u16,
     pid: Option<u64>,
-    buffers: ArrayVec<BUFF>,
+    pub buffers: ArrayVec<BUFF>,
     copy_handles: ArrayVec<COPY>,
     move_handles: ArrayVec<MOVE>,
     is_request: bool,
@@ -397,6 +397,10 @@ where
         self
     }
 
+    pub fn pop_in_pointer<T>(&mut self) -> Result<T, Error> {
+        unimplemented!()
+    }
+
     // TODO: Figure out a better API for buffers. This sucks.
     /*fn pop_in_buffer<T>(&mut self) -> InBuffer<T> {
 }*/
@@ -438,6 +442,12 @@ where
         self.pid.take()
             .map(Pid)
             .ok_or(LibuserError::PidMissing.into())
+    }
+
+    /// Indicate that the process's PID needs to be provided to the remote process.
+    pub fn set_send_pid(&mut self) -> &mut Self {
+        self.pid = Some(0);
+        self
     }
 
     /// Packs this IPC Message to an IPC buffer.
@@ -561,7 +571,7 @@ where
             cursor.write_u32::<LE>((size & 0xFFFFFFFF) as u32);
             cursor.write_u32::<LE>((addr & 0xFFFFFFFF) as u32);
 
-            let num = flags as usize
+            let num = flags as u64
                 | ((addr >> 36) & 0b111) << 2
                 | ((size >> 32) & 0b1111) << 24
                 | ((addr >> 32) & 0b1111) << 28;
@@ -580,7 +590,7 @@ where
             cursor.write_u32::<LE>((size & 0xFFFFFFFF) as u32);
             cursor.write_u32::<LE>((addr & 0xFFFFFFFF) as u32);
 
-            let num = flags as usize
+            let num = flags as u64
                 | ((addr >> 36) & 0b111) << 2
                 | ((size >> 32) & 0b1111) << 24
                 | ((addr >> 32) & 0b1111) << 28;
@@ -703,8 +713,8 @@ where
             let laddr = cursor.read_u32::<LE>();
             let addr = *(laddr as u64)
                 .set_bits(32..36, stuffed.get_bits(12..16) as u64)
-                .set_bits(36..39, stuffed.get_bits(6..9) as u64) as usize;
-            let size = stuffed.get_bits(16..32) as usize;
+                .set_bits(36..39, stuffed.get_bits(6..9) as u64) as u64;
+            let size = stuffed.get_bits(16..32) as u64;
             let counter = stuffed.get_bits(0..4) as u8;
             buffers.push(IPCBuffer { addr, size, ty: IPCBufferType::X { counter }, phantom: PhantomData });
         }
@@ -715,9 +725,9 @@ where
             let stuff = cursor.read_u32::<LE>();
             let addr = *(laddr as u64)
                 .set_bits(32..36, stuff.get_bits(28..32) as u64)
-                .set_bits(36..39, stuff.get_bits(2..5) as u64) as usize;
+                .set_bits(36..39, stuff.get_bits(2..5) as u64) as u64;
             let size = *(lsize as u64)
-                .set_bits(32..36, stuff.get_bits(24..28) as u64) as usize;
+                .set_bits(32..36, stuff.get_bits(24..28) as u64) as u64;
             let flags = stuff.get_bits(0..2) as u8;
 
             let ty = if i < hdr.num_a_descriptors() {

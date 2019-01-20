@@ -370,12 +370,13 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
     // BODY: page tables.
 
     let mut curoff = 0;
-    let hdr = MsgPackedHdr(LE::read_u64(&from_buf[curoff..curoff + 8]));
-    LE::write_u64(&mut to_buf[curoff..curoff + 8], hdr.0);
+    let from_hdr = MsgPackedHdr(LE::read_u64(&from_buf[curoff..curoff + 8]));
+    let to_hdr = MsgPackedHdr(LE::read_u64(&to_buf[curoff..curoff + 8]));
+    LE::write_u64(&mut to_buf[curoff..curoff + 8], from_hdr.0);
 
     curoff += 8;
 
-    let descriptor = if hdr.enable_handle_descriptor() {
+    let descriptor = if from_hdr.enable_handle_descriptor() {
         let descriptor = HandleDescriptorHeader(LE::read_u32(&from_buf[curoff..curoff + 4]));
         LE::write_u32(&mut to_buf[curoff..curoff + 4], descriptor.0);
         curoff += 4;
@@ -410,37 +411,87 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
         }
     }
 
-    for i in 0..hdr.num_x_descriptors() {
-        unimplemented!("Let's figure this out another time");
+    for i in 0..from_hdr.num_x_descriptors() {
+        let x_dword = LE::read_u64(&from_buf[curoff..curoff + 8]);
+        let counter = x_dword & 0xFF;
+        let buffer_size = x_dword >> 16;
+        let mut buffer_address = (((x_dword >> 2) & (0x70 | (x_dword >> 12) & 0xF)) << 32) | x_dword >> 32;
+
+        if buffer_size != 0 {
+
+            let c_flags = to_hdr.c_descriptor_flags();
+
+            // TODO: find receiver address
+            let receiver_address: Result<u64, UserspaceError> = if c_flags == 0 {
+                // TODO: check this error
+                return Err(UserspaceError::SlabheapFull);
+            } else if c_flags == 1 || c_flags == 2 {
+
+                let mut receiver_list_start_offset;
+                let mut receiver_list_end_offset;
+
+                if c_flags == 1 {
+
+                    receiver_list_start_offset = 0;
+                    receiver_list_end_offset = from_buf.len();
+
+                } else {
+
+                }
+                unimplemented!("1 or 2 flags")
+            } else {
+                unimplemented!("> 2 flags")
+            };
+
+            // TODO: buf_map with data from before
+
+            buffer_address = receiver_address?;
+
+            unimplemented!("Implement X descriptors entirely");
+
+        } else {
+            buffer_address = 0;
+        }
+
+        let num = *(counter.get_bits(0..4) as u32)
+            .set_bits(6..9, buffer_address.get_bits(36..39) as u32)
+            .set_bits(12..16, buffer_address.get_bits(32..36) as u32)
+            .set_bits(16..32, buffer_size as u32);
+
+        LE::write_u32(&mut to_buf[curoff..curoff + 4], num);
+        LE::write_u32(&mut to_buf[curoff + 4..curoff + 8], (buffer_address & 0xFFFFFFFF) as u32);
+
+        curoff += 8;
+
     }
 
-    if hdr.num_a_descriptors() != 0 || hdr.num_b_descriptors() != 0 {
+    if from_hdr.num_a_descriptors() != 0 || from_hdr.num_b_descriptors() != 0 {
         let mut from_mem = from_proc.process.pmemory.lock();
         let mut to_mem = to_proc.process.pmemory.lock();
 
-        for i in 0..hdr.num_a_descriptors() {
+        for i in 0..from_hdr.num_a_descriptors() {
             buf_map(from_buf, to_buf, &mut curoff, &mut *from_mem, &mut *to_mem, MappingFlags::empty())?;
         }
 
-        for i in 0..hdr.num_b_descriptors() {
+        for i in 0..from_hdr.num_b_descriptors() {
             buf_map(from_buf, to_buf, &mut curoff, &mut *from_mem, &mut *to_mem, MappingFlags::WRITABLE)?;
         }
 
-        for i in 0..hdr.num_w_descriptors() {
+        for i in 0..from_hdr.num_w_descriptors() {
             buf_map(from_buf, to_buf, &mut curoff, &mut *from_mem, &mut *to_mem, MappingFlags::WRITABLE)?;
         }
     }
 
-    (&mut to_buf[curoff..curoff + (hdr.raw_section_size() as usize) * 4])
-        .copy_from_slice(&from_buf[curoff..curoff + (hdr.raw_section_size() as usize) * 4]);
+    (&mut to_buf[curoff..curoff + (from_hdr.raw_section_size() as usize) * 4])
+        .copy_from_slice(&from_buf[curoff..curoff + (from_hdr.raw_section_size() as usize) * 4]);
 
-    if hdr.c_descriptor_flags() == 1 {
+    if from_hdr.c_descriptor_flags() == 1 {
         unimplemented!("Inline C Descriptor");
-    } else if hdr.c_descriptor_flags() == 2 {
+    } else if from_hdr.c_descriptor_flags() == 2 {
         unimplemented!("Single C Descriptor");
-    } else if hdr.c_descriptor_flags() != 0 {
+    } else if from_hdr.c_descriptor_flags() != 0 {
         unimplemented!("Multi C Descriptor");
-        for i in 0..hdr.c_descriptor_flags() - 2 {
+        for i in 0..from_hdr.c_descriptor_flags() - 2 {
         }
     }
 

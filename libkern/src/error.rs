@@ -21,7 +21,8 @@ enum_with_val! {
         ///
         /// Generally means it is not page aligned.
         InvalidAddress = 102,
-        // SlabheapFull = 103,
+        /// Resource exhaustion
+        SlabheapFull = 103,
         /// The virtual address space was exhausted.
         MemoryFull = 104,
         /// The process' handle table is full.
@@ -98,6 +99,7 @@ impl fmt::Display for KernelError {
             KernelError::NotImplemented => write!(f, "Method not implemented. Notify roblabla!"),
             KernelError::InvalidSize => write!(f, "Invalid size."),
             KernelError::InvalidAddress => write!(f, "Invalid address."),
+            KernelError::SlabheapFull => write!(f, "Resource exhaustion."),
             KernelError::MemoryFull => write!(f, "Memory full. Try to kill some processes and try again."),
             KernelError::HandleTableFull => write!(f, "Handle table full. You might want to bump your handle table size in the NPDM."),
             KernelError::InvalidMemPerms => write!(f, "Invalid memory permissions."),

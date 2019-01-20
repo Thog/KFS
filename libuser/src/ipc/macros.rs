@@ -28,7 +28,7 @@
 /// - Handle<move>: A Handle in the Handle Descriptor's move handle list.
 /// - Handle<copy>: A Handle in the Handle Descriptor's copy handle list.
 // TODO: Input Object! We should be able to take an ObjectWrapper<T: IObject>
-/// - InBuffer/OutBuffer/InPointer/OutPointer: Equivalent to A/B/C/X buffers.
+/// - InBuffer/OutBuffer/InPointer/OutPointer: Equivalent to A/B/X/C buffers.
 /// - &WaitableManager: The manager that signaled us.
 /// - T where T: Copy, Clone, repr(C): passed through Raw Data.
 ///
