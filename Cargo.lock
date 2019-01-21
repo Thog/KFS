@@ -207,6 +207,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "kfs-testing-client"
+version = "0.1.0"
+dependencies = [
+ "hashmap_core 0.1.9 (git+https://github.com/pepyakin/hashmap_core?rev=add-alloc-layout-extra)",
+ "kfs-libuser 0.1.0",
+ "kfs-libutils 0.1.0",
+ "lazy_static 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spin 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "kfs-testing-server"
+version = "0.1.0"
+dependencies = [
+ "hashmap_core 0.1.9 (git+https://github.com/pepyakin/hashmap_core?rev=add-alloc-layout-extra)",
+ "kfs-libkern 0.1.0",
+ "kfs-libuser 0.1.0",
+ "kfs-libutils 0.1.0",
+ "lazy_static 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spin 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "kfs-vi"
 version = "0.1.0"
 dependencies = [

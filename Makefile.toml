@@ -122,15 +122,43 @@ dependencies = ["userspace-linker", "install-rust-src"]
 command = "cargo"
 args = ["xbuild", "--target=i386-unknown-none", "--package=kfs-ahci", "--release"]
 
+[tasks.testing-client]
+workspace = false
+description = "Compiles kfs-testing-client"
+dependencies = ["userspace-linker", "install-rust-src"]
+command = "cargo"
+args = ["xbuild", "--target=i386-unknown-none", "--package=kfs-testing-client"]
+
+[tasks.testing-client-release]
+workspace = false
+description = "Compiles kfs-testing-client"
+dependencies = ["userspace-linker", "install-rust-src"]
+command = "cargo"
+args = ["xbuild", "--target=i386-unknown-none", "--package=kfs-testing-client", "--release"]
+
+[tasks.testing-server]
+workspace = false
+description = "Compiles kfs-testing-server"
+dependencies = ["userspace-linker", "install-rust-src"]
+command = "cargo"
+args = ["xbuild", "--target=i386-unknown-none", "--package=kfs-testing-server"]
+
+[tasks.testing-server-release]
+workspace = false
+description = "Compiles kfs-testing-server"
+dependencies = ["userspace-linker", "install-rust-src"]
+command = "cargo"
+args = ["xbuild", "--target=i386-unknown-none", "--package=kfs-testing-server", "--release"]
+
 [tasks.userspace]
 workspace = false
 description = "Compiles userspace apps"
-dependencies = ["shell", "clock", "sm", "vi", "ahci"]
+dependencies = ["shell", "clock", "sm", "vi", "ahci", "testing-client", "testing-server"]
 
 [tasks.userspace-release]
 workspace = false
 description = "Compiles userspace apps"
-dependencies = ["shell-release", "clock-release", "sm-release", "vi-release", "ahci-release"]
+dependencies = ["shell-release", "clock-release", "sm-release", "vi-release", "ahci-release", "testing-client-release", "testing-server-release"]
 
 [tasks.iso]
 workspace = false
@@ -145,6 +173,8 @@ cp target/i386-unknown-none/debug/kfs-clock     isofiles/boot/
 cp target/i386-unknown-none/debug/kfs-sm        isofiles/boot/
 cp target/i386-unknown-none/debug/kfs-vi        isofiles/boot/
 cp target/i386-unknown-none/debug/kfs-ahci      isofiles/boot/
+cp target/i386-unknown-none/debug/kfs-testing-client      isofiles/boot/
+cp target/i386-unknown-none/debug/kfs-testing-server      isofiles/boot/
 mkisofs-rs external/grub/isofiles isofiles -o os.iso -b boot/grub/i386-pc/eltorito.img --no-emul-boot --boot-info-table --embedded-boot external/grub/embedded.img
 '''
 ]
@@ -162,7 +192,13 @@ cp target/i386-unknown-none/release/kfs-clock     isofiles/boot/
 cp target/i386-unknown-none/release/kfs-sm        isofiles/boot/
 cp target/i386-unknown-none/release/kfs-vi        isofiles/boot/
 cp target/i386-unknown-none/release/kfs-ahci      isofiles/boot/
+<<<<<<< Updated upstream
 mkisofs-rs external/grub/isofiles isofiles -o os.iso -b boot/grub/i386-pc/eltorito.img --no-emul-boot --boot-info-table --embedded-boot external/grub/embedded.img
+=======
+cp target/i386-unknown-none/release/kfs-testing-client      isofiles/boot/
+cp target/i386-unknown-none/release/kfs-testing-server      isofiles/boot/
+grub-mkrescue -o os.iso isofiles
+>>>>>>> Stashed changes
 '''
 ]
 
@@ -171,14 +207,14 @@ workspace = false
 description = "Runs the bootable ISO in qemu."
 dependencies = ["iso-release"]
 command = "qemu-system-i386"
-args = ["-cdrom", "os.iso", "-serial", "stdio", "-vnc", "${VNC_PORT}", "-no-reboot", "-enable-kvm"]
+args = ["-cdrom", "os.iso", "-serial", "stdio", "-no-reboot", "-enable-kvm"]
 
 [tasks.qemu-debug]
 workspace = false
 description = "Runs the bootable ISO in qemu with gdb support"
 dependencies = ["iso"]
 command = "qemu-system-i386"
-args = ["-cdrom", "os.iso", "-serial", "stdio", "-vnc", "${VNC_PORT}", "-no-reboot", "-gdb", "tcp::${GDB_PORT}", "-S", "-d", "int,cpu_reset"]
+args = ["-cdrom", "os.iso", "-serial", "stdio", "-no-reboot", "-gdb", "tcp::${GDB_PORT}", "-S", "-d", "int,cpu_reset"]
 
 [tasks.doc]
 workspace = false

@@ -35,6 +35,7 @@ pub mod types;
 pub mod ipc;
 pub mod sm;
 pub mod vi;
+pub mod lm;
 pub mod error;
 pub mod allocator;
 pub mod terminal;
