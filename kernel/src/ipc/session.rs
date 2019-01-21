@@ -97,6 +97,7 @@ bitfield! {
     u8, num_w_descriptors, set_num_w_descriptors: 31, 28;
     u16, raw_section_size, set_raw_section_size: 41, 32;
     u8, c_descriptor_flags, set_c_descriptor_flags: 45, 42;
+    u32, c_list_offset, set_c_list_offset: 52, 62;
     enable_handle_descriptor, set_enable_handle_descriptor: 63;
 }
 
@@ -108,6 +109,30 @@ bitfield! {
     send_pid, set_send_pid: 0;
     u8, num_copy_handles, set_num_copy_handles: 4, 1;
     u8, num_move_handles, set_num_move_handles: 8, 5;
+}
+
+impl MsgPackedHdr {
+    pub fn message_size(&self, descriptor: &HandleDescriptorHeader) -> usize {
+        let padding_size = if self.enable_handle_descriptor() {
+            3
+        } else {
+            2
+        };
+
+        let pid_size = if descriptor.send_pid() {
+            2
+        } else {
+            0
+        };
+
+        let handle_size_word: u16 = (self.num_x_descriptors() * 2) as u16
+            + ((self.num_a_descriptors()
+            + self.num_b_descriptors() + self.num_w_descriptors()) * 3) as u16;
+
+        ((handle_size_word + self.raw_section_size() + padding_size
+            + (descriptor.num_copy_handles() as u16)
+            + (descriptor.num_move_handles() as u16) + pid_size) * 4) as usize
+    }
 }
 
 impl Session {
@@ -372,11 +397,19 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
     let mut curoff = 0;
     let from_hdr = MsgPackedHdr(LE::read_u64(&from_buf[curoff..curoff + 8]));
     let to_hdr = MsgPackedHdr(LE::read_u64(&to_buf[curoff..curoff + 8]));
+
+    let to_descriptor = if from_hdr.enable_handle_descriptor() {
+        let descriptor = HandleDescriptorHeader(LE::read_u32(&to_buf[curoff + 8..curoff + 12]));
+        descriptor
+    } else {
+        HandleDescriptorHeader(0)
+    };
+
     LE::write_u64(&mut to_buf[curoff..curoff + 8], from_hdr.0);
 
     curoff += 8;
 
-    let descriptor = if from_hdr.enable_handle_descriptor() {
+    let from_descriptor = if from_hdr.enable_handle_descriptor() {
         let descriptor = HandleDescriptorHeader(LE::read_u32(&from_buf[curoff..curoff + 4]));
         LE::write_u32(&mut to_buf[curoff..curoff + 4], descriptor.0);
         curoff += 4;
@@ -385,24 +418,24 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
         HandleDescriptorHeader(0)
     };
 
-    if descriptor.send_pid() {
+    if from_descriptor.send_pid() {
         // TODO: Atmosphere patch for fs_mitm.
         LE::write_u64(&mut to_buf[curoff..curoff + 8], from_proc.process.pid as u64);
         curoff += 8;
     }
 
-    if descriptor.num_copy_handles() != 0 || descriptor.num_move_handles() != 0 {
+    if from_descriptor.num_copy_handles() != 0 || from_descriptor.num_move_handles() != 0 {
         let mut from_handle_table = from_proc.process.phandles.lock();
         let mut to_handle_table = to_proc.process.phandles.lock();
 
-        for i in 0..descriptor.num_copy_handles() {
+        for i in 0..from_descriptor.num_copy_handles() {
             let handle = LE::read_u32(&from_buf[curoff..curoff + 4]);
             let handle = from_handle_table.get_handle(handle)?;
             let handle = to_handle_table.add_handle(handle);
             LE::write_u32(&mut to_buf[curoff..curoff + 4], handle);
             curoff += 4;
         }
-        for i in 0..descriptor.num_move_handles() {
+        for i in 0..from_descriptor.num_move_handles() {
             let handle = LE::read_u32(&from_buf[curoff..curoff + 4]);
             let handle = from_handle_table.delete_handle(handle)?;
             let handle = to_handle_table.add_handle(handle);
@@ -411,9 +444,15 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
         }
     }
 
+    let c_list_offset: usize = if to_hdr.c_list_offset() == 0 {
+        to_hdr.message_size(&to_descriptor)
+    } else {
+        (to_hdr.c_list_offset() * 4) as usize
+    };
+
     for i in 0..from_hdr.num_x_descriptors() {
         let x_dword = LE::read_u64(&from_buf[curoff..curoff + 8]);
-        let counter = x_dword & 0xFF;
+        let counter: u64 = x_dword & 0xFF;
         let buffer_size = x_dword >> 16;
         let mut buffer_address = (((x_dword >> 2) & (0x70 | (x_dword >> 12) & 0xF)) << 32) | x_dword >> 32;
 
@@ -427,20 +466,49 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
                 return Err(UserspaceError::SlabheapFull);
             } else if c_flags == 1 || c_flags == 2 {
 
-                let mut receiver_list_start_offset;
-                let mut receiver_list_end_offset;
+                let mut receiver_list_start_address;
+                let mut receiver_list_end_address;
 
                 if c_flags == 1 {
+                    let message_address = to_buf.as_ptr() as u64;
 
-                    receiver_list_start_offset = 0;
-                    receiver_list_end_offset = from_buf.len();
+                    receiver_list_start_address = message_address + to_hdr.message_size(&to_descriptor) as u64;
+                    receiver_list_end_address = message_address + to_buf.len() as u64;
 
                 } else {
+                    let c_dword = LE::read_u64(&to_buf[c_list_offset..c_list_offset + 8]);
 
+                    let size = c_dword >> 48;
+
+                    if size == 0 {
+                        return Err(UserspaceError::SlabheapFull);
+                    }
+
+                    receiver_list_start_address = c_dword & 0x7fffffffff;
+                    receiver_list_end_address = receiver_list_start_address + size;
                 }
+
                 unimplemented!("1 or 2 flags")
+
             } else {
-                unimplemented!("> 2 flags")
+                let num_c_descriptors: u64 = (c_flags - 2) as u64;
+
+                if counter >= num_c_descriptors {
+                    return Err(UserspaceError::SlabheapFull);
+                }
+
+                let c_list_entry_offset = c_list_offset + (counter * 8) as usize;
+
+                let c_dword = LE::read_u64(&to_buf[c_list_entry_offset..c_list_entry_offset + 8]);
+
+                let address = c_dword & 0x7fffffffff;
+                let size = c_dword >> 48;
+
+                if address == 0 || size == 0 || size < buffer_size {
+                    return Err(UserspaceError::SlabheapFull);
+                }
+
+                Ok(address)
             };
 
             // TODO: buf_map with data from before
