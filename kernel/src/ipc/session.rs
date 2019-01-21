@@ -33,6 +33,7 @@ use byteorder::{LE, ByteOrder};
 use crate::paging::{MappingFlags, mapping::MappingType, process_memory::ProcessMemory};
 use crate::mem::{UserSpacePtr, UserSpacePtrMut, VirtualAddress};
 use bit_field::BitField;
+use crate::utils;
 
 #[derive(Debug)]
 struct InternalSession {
@@ -112,6 +113,7 @@ bitfield! {
 }
 
 impl MsgPackedHdr {
+    /// Compute the complete Message size
     pub fn message_size(&self, descriptor: &HandleDescriptorHeader) -> usize {
         let padding_size = if self.enable_handle_descriptor() {
             3
@@ -450,6 +452,8 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
         (to_hdr.c_list_offset() * 4) as usize
     };
 
+    let mut receiver_dst_offset = 0;
+
     for i in 0..from_hdr.num_x_descriptors() {
         let x_dword = LE::read_u64(&from_buf[curoff..curoff + 8]);
         let counter: u64 = x_dword & 0xFF;
@@ -460,9 +464,7 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
 
             let c_flags = to_hdr.c_descriptor_flags();
 
-            // TODO: find receiver address
             let receiver_address: Result<u64, UserspaceError> = if c_flags == 0 {
-                // TODO: check this error
                 return Err(UserspaceError::SlabheapFull);
             } else if c_flags == 1 || c_flags == 2 {
 
@@ -476,6 +478,9 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
                     receiver_list_end_address = message_address + to_buf.len() as u64;
 
                 } else {
+                    // TODO: Store C buffer definitions on the stack.
+                    // BODY: As c_list_offset can be anywhere an the server message,
+                    // BODY: the data at the offset could be overwritten before arriving here!
                     let c_dword = LE::read_u64(&to_buf[c_list_offset..c_list_offset + 8]);
 
                     let size = c_dword >> 48;
@@ -488,7 +493,16 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
                     receiver_list_end_address = receiver_list_start_address + size;
                 }
 
-                unimplemented!("1 or 2 flags")
+                let start_address = utils::align_up(receiver_list_start_address + receiver_dst_offset, 0x10);
+                let end_address = start_address + buffer_size;
+
+                receiver_dst_offset = end_address - receiver_list_start_address;
+
+                if end_address <= start_address || end_address > receiver_list_end_address {
+                    return Err(UserspaceError::SlabheapFull);
+                }
+
+                Ok(start_address)
 
             } else {
                 let num_c_descriptors: u64 = (c_flags - 2) as u64;
@@ -497,6 +511,9 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
                     return Err(UserspaceError::SlabheapFull);
                 }
 
+                // TODO: Store C buffer definitions on the stack.
+                // BODY: As c_list_offset can be anywhere an the server message,
+                // BODY: the data at the offset could be overwritten before arriving here!
                 let c_list_entry_offset = c_list_offset + (counter * 8) as usize;
 
                 let c_dword = LE::read_u64(&to_buf[c_list_entry_offset..c_list_entry_offset + 8]);
@@ -511,7 +528,7 @@ fn pass_message(from_buf: &[u8], from_proc: Arc<ThreadStruct>, to_buf: &mut [u8]
                 Ok(address)
             };
 
-            // TODO: buf_map with data from before
+            // TODO: copy the buffer to the other process.
 
             buffer_address = receiver_address?;
 
