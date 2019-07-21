@@ -210,7 +210,6 @@ fn get_type(output: bool, ty: &Alias, is_server: bool) -> Result<String, Error> 
 
         // Unsized bytes
         Alias::Bytes(0) => Ok("[u8]".to_string()),
-        //Alias::Bytes(len) => Ok(format!("generic_array::GenericArray<u8, generic_array::typenum::consts::U{}]", len)),
         Alias::Bytes(len) => Ok(format!("[u8; {}]", len)),
 
         // Deprecated in newer version of SwIPC anyways.
