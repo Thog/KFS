@@ -32,6 +32,9 @@ jobs:
         with:
           a: ${{ github.ref }}
           b: master
+      
+      - name: Testing
+        run: echo ${{ github.repository }}
 
       - uses: actions/checkout@master
         name: Checkout
