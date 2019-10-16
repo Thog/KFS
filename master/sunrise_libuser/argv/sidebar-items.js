@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["argc","Get the number of arguments in argv."],["argv","Get the argument array. It is guaranteed to have at least `argc()` elements."]]});
